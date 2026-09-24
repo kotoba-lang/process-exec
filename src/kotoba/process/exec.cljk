@@ -7,8 +7,13 @@
 "
   (:require [kotoba.process.max-stdout-bytes :refer [max-stdout-bytes]]
             [kotoba.process.max-timeout-ms :refer [max-timeout-ms]]
-            [kotoba.process.read-bounded :refer [read-bounded]]
             [kotoba.process.validate-spawn :refer [validate-spawn]])
+  ;; read-bounded is defined only under #?(:clj ...) in its own repo and is
+  ;; used only by the :clj branch below. Referring it unconditionally made
+  ;; this namespace -- and kotoba.process, which re-exports exec -- fail to
+  ;; load on the kbb engine with `read-bounded does not exist` (measured
+  ;; 2026-09-24: `(require '[kotoba.process])` under kbb).
+  #?(:clj (:require [kotoba.process.read-bounded :refer [read-bounded]]))
   #?(:cljs (:require ["child_process" :as cp]))
   #?(:clj
      (:import (java.io ByteArrayOutputStream InputStream)
@@ -68,7 +73,11 @@
                :stderr (or (.getMessage e) "exec failed")}))
           :cljs
           (try
-            (let [r (cp/execFileSync (first argv) (subvec argv 1)
+            ;; The args go to Node as a JS array. A ClojureScript vector here
+            ;; is an object, which execFileSync reads as its OPTIONS argument
+            ;; and then fails every call with `The "callback" argument must be
+            ;; of type function` (measured 2026-09-24 on kbb).
+            (let [r (cp/execFileSync (first argv) (clj->js (vec (rest argv)))
                                      #js {:encoding "utf8"
                                           :maxBuffer max-stdout-bytes
                                           :windowsHide true})]
